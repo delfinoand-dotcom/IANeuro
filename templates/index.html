@@ -1,0 +1,805 @@
+```html
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+
+    <title>Asistente IA con RAG</title>
+
+    <style>
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: Arial, Helvetica, sans-serif;
+        }
+
+        body {
+            background: #f2f5f9;
+            color: #333;
+        }
+
+        .container {
+            width: 90%;
+            max-width: 900px;
+            margin: 40px auto;
+        }
+
+        .card {
+            background: white;
+            border-radius: 12px;
+            padding: 25px;
+            margin-bottom: 25px;
+            box-shadow: 0px 5px 15px rgba(0,0,0,.1);
+        }
+
+        h1 {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        h2 {
+            margin-bottom: 15px;
+        }
+
+        input[type=text],
+        input[type=password],
+        input[type=file] {
+            width: 100%;
+            padding: 12px;
+            margin-bottom: 15px;
+            border: 1px solid #ccc;
+            border-radius: 8px;
+            font-size: 16px;
+        }
+
+        textarea {
+            width: 100%;
+            height: 120px;
+            resize: none;
+            padding: 10px;
+            font-size: 16px;
+            border-radius: 8px;
+            border: 1px solid #ccc;
+        }
+
+        button {
+            background: #2563eb;
+            color: white;
+            border: none;
+            padding: 12px 25px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 16px;
+            margin-right: 5px;
+        }
+
+        button:hover {
+            background: #1d4ed8;
+        }
+
+        button:disabled {
+            background: gray;
+        }
+
+        .btnCerrar {
+            background: #dc2626;
+        }
+
+        .btnCerrar:hover {
+            background: #b91c1c;
+        }
+
+        .estado {
+            margin-top: 15px;
+            color: green;
+            font-weight: bold;
+        }
+
+        .error {
+            color: red;
+        }
+
+        #respuesta {
+            margin-top: 15px;
+            background: #eef5ff;
+            border-left: 5px solid #2563eb;
+            padding: 20px;
+            border-radius: 8px;
+            min-height: 120px;
+            white-space: pre-wrap;
+        }
+
+        .loader {
+            display: none;
+            width: 35px;
+            height: 35px;
+            border: 5px solid #ddd;
+            border-top: 5px solid #2563eb;
+            border-radius: 50%;
+            animation: girar 1s linear infinite;
+            margin: 20px auto;
+        }
+
+        @keyframes girar {
+            100% {
+                transform: rotate(360deg);
+            }
+        }
+
+        progress {
+            width: 100%;
+            height: 20px;
+            display: none;
+        }
+
+        #aplicacion {
+            display: none;
+        }
+
+        #panelSubir {
+            display: none;
+        }
+
+        #panelUsuario {
+            background: #eef5ff;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 25px;
+        }
+
+    </style>
+
+</head>
+
+<body>
+
+<div class="container">
+
+    <h1>📄 Asistente IA con RAG</h1>
+
+
+    <!-- ============================= -->
+    <!-- LOGIN -->
+    <!-- ============================= -->
+
+    <div class="card" id="panelLogin">
+
+        <h2>🔐 Iniciar sesión</h2>
+
+        <input
+            type="text"
+            id="username"
+            placeholder="Usuario">
+
+        <input
+            type="password"
+            id="password"
+            placeholder="Contraseña">
+
+        <button onclick="iniciarSesion()">
+            Iniciar sesión
+        </button>
+
+        <p id="mensajeLogin"></p>
+
+    </div>
+
+
+    <!-- ============================= -->
+    <!-- APLICACIÓN -->
+    <!-- ============================= -->
+
+    <div id="aplicacion">
+
+        <!-- Información del usuario -->
+
+        <div id="panelUsuario">
+
+            <strong>Usuario:</strong>
+            <span id="usuarioActual"></span>
+
+            <br>
+
+            <strong>Rol:</strong>
+            <span id="rolActual"></span>
+
+            <br><br>
+
+            <button
+                class="btnCerrar"
+                onclick="cerrarSesion()">
+                Cerrar sesión
+            </button>
+
+        </div>
+
+
+        <!-- ============================= -->
+        <!-- SUBIR DOCUMENTO -->
+        <!-- SOLO ADMIN -->
+        <!-- ============================= -->
+
+        <div class="card" id="panelSubir">
+
+            <h2>📄 Subir documento PDF</h2>
+
+            <input
+                type="file"
+                id="archivo"
+                accept=".pdf">
+
+            <button
+                id="btnSubir"
+                onclick="subirDocumento()">
+
+                Subir documento
+
+            </button>
+
+            <progress
+                id="barra"
+                value="0"
+                max="100">
+            </progress>
+
+            <p id="estado"></p>
+
+        </div>
+
+
+        <!-- ============================= -->
+        <!-- CONSULTA IA -->
+        <!-- ADMIN Y USUARIO -->
+        <!-- ============================= -->
+
+        <div class="card">
+
+            <h2>🤖 Realizar consulta</h2>
+
+            <textarea
+                id="pregunta"
+                placeholder="Escriba una pregunta">
+            </textarea>
+
+            <br><br>
+
+            <button
+                id="btnPregunta"
+                onclick="consultarIA()">
+
+                Preguntar
+
+            </button>
+
+            <div
+                class="loader"
+                id="loader">
+            </div>
+
+        </div>
+
+
+        <!-- ============================= -->
+        <!-- RESPUESTA -->
+        <!-- ============================= -->
+
+        <div class="card">
+
+            <h2>💬 Respuesta</h2>
+
+            <div id="respuesta"></div>
+
+        </div>
+
+    </div>
+
+</div>
+
+
+<script>
+
+    // ==================================================
+    // OBTENER TOKEN
+    // ==================================================
+
+    function obtenerToken() {
+
+        return localStorage.getItem("token");
+
+    }
+
+
+    // ==================================================
+    // INICIAR SESIÓN
+    // ==================================================
+
+    async function iniciarSesion() {
+
+        const username =
+            document.getElementById("username").value.trim();
+
+        const password =
+            document.getElementById("password").value;
+
+        const mensaje =
+            document.getElementById("mensajeLogin");
+
+
+        if (!username || !password) {
+
+            mensaje.innerHTML =
+                "Ingrese usuario y contraseña.";
+
+            mensaje.className = "error";
+
+            return;
+
+        }
+
+
+        try {
+
+            const response = await fetch("/login", {
+
+                method: "POST",
+
+                headers: {
+
+                    "Content-Type":
+                        "application/x-www-form-urlencoded"
+
+                },
+
+                body: new URLSearchParams({
+
+                    username: username,
+                    password: password
+
+                })
+
+            });
+
+
+            const data = await response.json();
+
+
+            if (!response.ok) {
+
+                mensaje.innerHTML =
+                    data.detail ||
+                    "Usuario o contraseña incorrectos.";
+
+                mensaje.className = "error";
+
+                return;
+
+            }
+
+
+            // Guardar JWT
+
+            localStorage.setItem(
+                "token",
+                data.access_token
+            );
+
+
+            // Guardar rol
+
+            localStorage.setItem(
+                "rol",
+                data.rol
+            );
+
+
+            // Guardar usuario
+
+            localStorage.setItem(
+                "usuario",
+                username
+            );
+
+
+            mostrarAplicacion();
+
+
+        }
+        catch (error) {
+
+            mensaje.innerHTML =
+                "No se pudo conectar con el servidor.";
+
+            mensaje.className = "error";
+
+        }
+
+    }
+
+
+    // ==================================================
+    // MOSTRAR APLICACIÓN
+    // ==================================================
+
+    function mostrarAplicacion() {
+
+        const token =
+            obtenerToken();
+
+        const rol =
+            localStorage.getItem("rol");
+
+        const usuario =
+            localStorage.getItem("usuario");
+
+
+        if (!token) {
+
+            return;
+
+        }
+
+
+        document.getElementById(
+            "panelLogin"
+        ).style.display = "none";
+
+
+        document.getElementById(
+            "aplicacion"
+        ).style.display = "block";
+
+
+        document.getElementById(
+            "usuarioActual"
+        ).innerHTML = usuario || "";
+
+
+        document.getElementById(
+            "rolActual"
+        ).innerHTML = rol || "";
+
+
+        // ==============================================
+        // SOLO ADMINISTRADOR PUEDE SUBIR DOCUMENTOS
+        // ==============================================
+
+        if (rol === "admin") {
+
+            document.getElementById(
+                "panelSubir"
+            ).style.display = "block";
+
+        }
+        else {
+
+            document.getElementById(
+                "panelSubir"
+            ).style.display = "none";
+
+        }
+
+    }
+
+
+    // ==================================================
+    // CERRAR SESIÓN
+    // ==================================================
+
+    function cerrarSesion() {
+
+        localStorage.removeItem("token");
+
+        localStorage.removeItem("rol");
+
+        localStorage.removeItem("usuario");
+
+
+        document.getElementById(
+            "aplicacion"
+        ).style.display = "none";
+
+
+        document.getElementById(
+            "panelLogin"
+        ).style.display = "block";
+
+
+        document.getElementById(
+            "username"
+        ).value = "";
+
+
+        document.getElementById(
+            "password"
+        ).value = "";
+
+
+        document.getElementById(
+            "respuesta"
+        ).innerHTML = "";
+
+    }
+
+
+    // ==================================================
+    // SUBIR DOCUMENTO
+    // SOLO ADMIN
+    // ==================================================
+
+    async function subirDocumento() {
+
+        const archivo =
+            document.getElementById("archivo")
+                .files[0];
+
+        const estado =
+            document.getElementById("estado");
+
+        const barra =
+            document.getElementById("barra");
+
+        const boton =
+            document.getElementById("btnSubir");
+
+
+        if (!archivo) {
+
+            alert("Seleccione un archivo PDF");
+
+            return;
+
+        }
+
+
+        const formData =
+            new FormData();
+
+        formData.append(
+            "file",
+            archivo
+        );
+
+
+        barra.style.display = "block";
+
+        barra.value = 30;
+
+        boton.disabled = true;
+
+        estado.innerHTML =
+            "Subiendo documento...";
+
+        estado.className = "estado";
+
+
+        try {
+
+            const response =
+                await fetch(
+                    "/cargar-documento/",
+                    {
+
+                        method: "POST",
+
+                        headers: {
+
+                            "Authorization":
+                                "Bearer " +
+                                obtenerToken()
+
+                        },
+
+                        body: formData
+
+                    }
+                );
+
+
+            barra.value = 80;
+
+
+            const data =
+                await response.json();
+
+
+            if (!response.ok) {
+
+                estado.innerHTML =
+                    data.detail ||
+                    "Error al subir el documento.";
+
+                estado.className = "error";
+
+            }
+            else {
+
+                barra.value = 100;
+
+                estado.innerHTML =
+                    data.mensaje ||
+                    "Documento cargado correctamente.";
+
+                estado.className = "estado";
+
+            }
+
+        }
+        catch (error) {
+
+            estado.innerHTML =
+                "Error al conectar con la API.";
+
+            estado.className = "error";
+
+        }
+
+
+        boton.disabled = false;
+
+
+        setTimeout(() => {
+
+            barra.style.display = "none";
+
+            barra.value = 0;
+
+        }, 1000);
+
+    }
+
+
+    // ==================================================
+    // CONSULTAR IA
+    // ADMIN Y USUARIO
+    // ==================================================
+
+    async function consultarIA() {
+
+        const pregunta =
+            document.getElementById(
+                "pregunta"
+            ).value.trim();
+
+
+        const respuesta =
+            document.getElementById(
+                "respuesta"
+            );
+
+
+        const loader =
+            document.getElementById(
+                "loader"
+            );
+
+
+        const boton =
+            document.getElementById(
+                "btnPregunta"
+            );
+
+
+        if (!pregunta) {
+
+            alert("Ingrese una pregunta");
+
+            return;
+
+        }
+
+
+        loader.style.display =
+            "block";
+
+        boton.disabled = true;
+
+        respuesta.innerHTML = "";
+
+
+        try {
+
+            const response =
+                await fetch(
+                    "/consultar-ia/",
+                    {
+
+                        method: "POST",
+
+                        headers: {
+
+                            "Content-Type":
+                                "application/json",
+
+                            "Authorization":
+                                "Bearer " +
+                                obtenerToken()
+
+                        },
+
+                        body: JSON.stringify({
+
+                            pregunta:
+                                pregunta
+
+                        })
+
+                    }
+                );
+
+
+            const data =
+                await response.json();
+
+
+            if (!response.ok) {
+
+                if (
+                    response.status === 401
+                ) {
+
+                    cerrarSesion();
+
+                    alert(
+                        "La sesión expiró. Inicie sesión nuevamente."
+                    );
+
+                    return;
+
+                }
+
+
+                respuesta.innerHTML =
+                    data.detail ||
+                    "Error al consultar la IA.";
+
+                return;
+
+            }
+
+
+            respuesta.innerHTML =
+                data.respuesta ||
+                data.answer ||
+                "No se obtuvo una respuesta.";
+
+        }
+        catch (error) {
+
+            respuesta.innerHTML =
+                "Error al conectar con la API.";
+
+        }
+
+
+        loader.style.display =
+            "none";
+
+        boton.disabled = false;
+
+    }
+
+
+    // ==================================================
+    // COMPROBAR SESIÓN AL CARGAR LA PÁGINA
+    // ==================================================
+
+    window.onload = function () {
+
+        if (obtenerToken()) {
+
+            mostrarAplicacion();
+
+        }
+
+    };
+
+</script>
+
+</body>
+
+</html>
+```

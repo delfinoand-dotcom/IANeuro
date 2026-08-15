@@ -1,0 +1,58 @@
+
+fastapi
+uvicorn
+
+#LangChain
+
+langchain_classic
+langchain-community
+langchain-openai
+langchain-text-splitters
+langchain-core
+
+#OpenAI
+
+openai
+
+#Base de datos vectorial
+
+chromadb
+
+#Embeddings y procesamiento de documentos
+
+tiktoken
+
+#Lectura de archivos
+
+pypdf
+python-docx
+unstructured
+
+#Plantillas HTML
+
+jinja2
+
+#Variables de entorno
+
+python-dotenv
+
+#Validación de datos
+
+pydantic
+
+#Subida de archivos
+
+python-multipart
+
+#Autenticación y seguridad
+
+PyJWT
+pwdlib[argon2]
+
+#Base de datos de usuarios
+
+sqlalchemy
+
+#Tests
+
+pytest
