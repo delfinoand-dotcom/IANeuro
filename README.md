@@ -471,3 +471,23 @@ Para un entorno productivo serían necesarios controles adicionales.
 **26 tests superados correctamente.**
 
 La suite valida controles funcionales y de seguridad de la API.
+
+## 21. Persistencia e incorporación incremental de conocimiento
+
+El sistema RAG utiliza ChromaDB como base de datos vectorial persistente.
+
+La incorporación de documentos es incremental: cuando un administrador
+carga un nuevo documento, sus fragmentos y embeddings se agregan a la
+colección existente sin eliminar los documentos previamente indexados.
+
+Por lo tanto, la base de conocimiento disponible para el sistema RAG
+puede crecer progresivamente a medida que se incorporan nuevos documentos.
+
+Es importante aclarar que este mecanismo no implica un reentrenamiento
+del modelo de lenguaje. El LLM no modifica sus parámetros ni "aprende"
+los documentos cargados. La información se conserva en ChromaDB y es
+recuperada dinámicamente mediante RAG al realizar cada consulta.
+
+En la implementación actual, la eliminación de un archivo PDF original
+no elimina automáticamente la información que ya fue indexada en
+ChromaDB.
