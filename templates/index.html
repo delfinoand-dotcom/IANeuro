@@ -6,10 +6,12 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
 
-    <title>Asistente IA con RAG</title>
+    <title>Asistente IA</title>
 
     <style>
-
+        #aplicacion {
+        display: none;
+        }
         * {
             margin: 0;
             padding: 0;
@@ -36,6 +38,28 @@
             box-shadow: 0px 5px 15px rgba(0,0,0,.1);
         }
 
+        #panelUsuarios{
+             display:none;
+        }
+
+        select{
+            width: 100%;
+            padding: 10px;
+            margin-bottom: 15px;
+            border-radius: 8px;
+            border: 1px solid #ccc;
+            font-size: 16px;
+        }
+
+        input[type=text],
+        input[type=password]{
+             width:100%;
+             padding:10px;
+             margin-bottom:15px;
+             font-size:16px;
+             border-radius:8px;
+             border:1px solid #ccc;
+        }
         h1 {
             text-align: center;
             margin-bottom: 30px;
@@ -159,7 +183,7 @@
 
 <div class="container">
 
-    <h1>📄 Asistente IA con RAG</h1>
+    <h1>📄 Asistente IA</h1>
 
 
     <!-- ============================= -->
@@ -188,36 +212,83 @@
 
     </div>
 
-
+    
     <!-- ============================= -->
     <!-- APLICACIÓN -->
     <!-- ============================= -->
 
     <div id="aplicacion">
 
-        <!-- Información del usuario -->
-
         <div id="panelUsuario">
 
-            <strong>Usuario:</strong>
-            <span id="usuarioActual"></span>
+        <strong>Usuario:</strong>
+        <span id="usuarioActual"></span>
 
-            <br>
+        <br>
 
-            <strong>Rol:</strong>
-            <span id="rolActual"></span>
+        <strong>Rol:</strong>
+        <span id="rolActual"></span>
 
-            <br><br>
+        <br>
 
-            <button
-                class="btnCerrar"
-                onclick="cerrarSesion()">
-                Cerrar sesión
-            </button>
+        <strong>Consultas:</strong>
+        <span id="usoConsultas">0 / 0</span>
+
+        <br>
+
+        <strong>Disponibles:</strong>
+        <span id="consultasDisponibles">0</span>
+
+        <br><br>
+
+        <button
+        class="btnCerrar"
+        onclick="cerrarSesion()">
+        Cerrar sesión
+        </button>
 
         </div>
 
+        <!-- ============================= -->
+        <!-- CREAR USUARIOS -->
+        <!-- SOLO ADMIN -->
+        <!-- ============================= -->
 
+        <div class="card" id="panelUsuarios">
+
+            <h2>👥 Crear usuario</h2>
+
+            <input
+                type="text"
+                id="nuevoUsername"
+                placeholder="Nombre de usuario">
+
+            <input
+                type="password"
+                id="nuevoPassword"
+                placeholder="Contraseña">
+
+            <select id="nuevoRol">
+
+                <option value="usuario">
+                    Usuario
+                </option>
+
+                <option value="admin">
+                    Administrador
+                </option>
+
+            </select>
+
+            <br><br>
+
+            <button onclick="crearUsuario()">
+                Crear usuario
+            </button>
+
+            <p id="estadoUsuario"></p>
+
+        </div>
         <!-- ============================= -->
         <!-- SUBIR DOCUMENTO -->
         <!-- SOLO ADMIN -->
@@ -298,10 +369,58 @@
     </div>
 
 </div>
-
+    
 
 <script>
+    // ==================================================
+    // MOSTRAR CONTADOR TOKENS
+    // ==================================================
+    async function actualizarUso() {
 
+        try {
+
+            const response = await fetch(
+                "/mi-uso/",
+                {
+                    method: "GET",
+
+                    headers: {
+                        "Authorization":
+                        "Bearer " + obtenerToken()
+                    }
+                }
+            );
+
+            if (!response.ok) {
+            return;
+        }
+
+            const data = await response.json();
+
+            document.getElementById(
+                "usoConsultas"
+            ).innerHTML =
+                data.consultas_usadas +
+                " / " +
+                data.limite_consultas;
+
+
+            document.getElementById(
+            "consultasDisponibles"
+            ).innerHTML =
+            data.consultas_disponibles;
+
+        }
+        catch (error) {
+
+            console.error(
+                "Error obteniendo uso:",
+                error
+            );
+
+     }
+
+    }
     // ==================================================
     // OBTENER TOKEN
     // ==================================================
@@ -424,67 +543,84 @@
     // MOSTRAR APLICACIÓN
     // ==================================================
 
-    function mostrarAplicacion() {
+    
 
-        const token =
-            obtenerToken();
+    async function mostrarAplicacion() {
 
-        const rol =
-            localStorage.getItem("rol");
+        const token = obtenerToken();
 
-        const usuario =
-            localStorage.getItem("usuario");
+        const rol = localStorage.getItem("rol");
+
+        const usuario = localStorage.getItem("usuario");
 
 
+        // Si no hay token, no mostramos la aplicación
         if (!token) {
-
-            return;
-
+        return;
         }
 
 
+        // Ocultar panel de login
         document.getElementById(
             "panelLogin"
         ).style.display = "none";
 
 
+        // Mostrar aplicación
         document.getElementById(
-            "aplicacion"
+        "aplicacion"
         ).style.display = "block";
 
 
+        // Mostrar usuario conectado
         document.getElementById(
-            "usuarioActual"
+        "usuarioActual"
         ).innerHTML = usuario || "";
 
 
+        // Mostrar rol
         document.getElementById(
-            "rolActual"
+        "rolActual"
         ).innerHTML = rol || "";
 
 
-        // ==============================================
-        // SOLO ADMINISTRADOR PUEDE SUBIR DOCUMENTOS
-        // ==============================================
+    // ==========================================
+    // PERMISOS SEGÚN ROL
+    // ==========================================
 
         if (rol === "admin") {
 
+        // El administrador puede subir documentos
             document.getElementById(
                 "panelSubir"
+            ).style.display = "block";
+
+
+        // El administrador puede crear usuarios
+            document.getElementById(
+                "panelUsuarios"
             ).style.display = "block";
 
         }
         else {
 
+        // Usuario común NO puede subir documentos
             document.getElementById(
-                "panelSubir"
+             "panelSubir"
+            ).style.display = "none";
+
+
+        // Usuario común NO puede crear usuarios
+            document.getElementById(
+                "panelUsuarios"
             ).style.display = "none";
 
         }
-
+        actualizarUso();
     }
+    
 
-
+            
     // ==================================================
     // CERRAR SESIÓN
     // ==================================================
@@ -492,38 +628,183 @@
     function cerrarSesion() {
 
         localStorage.removeItem("token");
-
         localStorage.removeItem("rol");
-
         localStorage.removeItem("usuario");
-
 
         document.getElementById(
             "aplicacion"
         ).style.display = "none";
 
-
         document.getElementById(
             "panelLogin"
         ).style.display = "block";
-
 
         document.getElementById(
             "username"
         ).value = "";
 
-
         document.getElementById(
             "password"
         ).value = "";
 
+        document.getElementById(
+            "pregunta"
+        ).value = "";
 
         document.getElementById(
             "respuesta"
         ).innerHTML = "";
 
+        document.getElementById(
+            "usuarioActual"
+        ).innerHTML = "";
+
+        document.getElementById(
+            "rolActual"
+        ).innerHTML = "";
+
+        document.getElementById(
+            "usoConsultas"
+        ).innerHTML = "0 / 0";
+
+        document.getElementById(
+            "consultasDisponibles"
+        ).innerHTML = "0";
+    }
+    async function crearUsuario() {
+
+    const username =
+        document.getElementById("nuevoUsername").value.trim();
+
+    const password =
+        document.getElementById("nuevoPassword").value;
+
+    const rol =
+        document.getElementById("nuevoRol").value;
+
+    const estado =
+        document.getElementById("estadoUsuario");
+
+
+    // Validar campos
+    if (!username || !password) {
+
+        estado.innerHTML =
+            "Ingrese usuario y contraseña.";
+
+        estado.className = "error";
+
+        return;
     }
 
+
+    try {
+
+        // Tu endpoint actual recibe username, password y rol
+        // como parámetros simples, por eso los enviamos en la URL
+
+        const parametros =
+            new URLSearchParams({
+                username: username,
+                password: password,
+                rol: rol
+            });
+
+
+        const response = await fetch(
+            "/usuarios/?" + parametros.toString(),
+            {
+                method: "POST",
+
+                headers: {
+                    "Authorization":
+                        "Bearer " + obtenerToken()
+                }
+            }
+        );
+
+
+        const data = await response.json();
+
+
+        // Si FastAPI devuelve un error
+        if (!response.ok) {
+
+            // Token vencido o inválido
+            if (response.status === 401) {
+
+                estado.innerHTML =
+                    "La sesión expiró. Inicie sesión nuevamente.";
+
+                estado.className = "error";
+
+                return;
+            }
+
+
+            // Usuario sin permisos de administrador
+            if (response.status === 403) {
+
+                estado.innerHTML =
+                    "No tiene permisos para crear usuarios.";
+
+                estado.className = "error";
+
+                return;
+            }
+
+
+            estado.innerHTML =
+                data.detail ||
+                "No se pudo crear el usuario.";
+
+            estado.className = "error";
+
+            return;
+        }
+
+
+        // Usuario creado correctamente
+        estado.innerHTML =
+            "Usuario '" +
+            data.usuario +
+            "' creado correctamente con rol '" +
+            data.rol +
+            "'.";
+
+        estado.className = "estado";
+
+
+        // Limpiar formulario
+        document.getElementById(
+            "nuevoUsername"
+        ).value = "";
+
+        document.getElementById(
+            "nuevoPassword"
+        ).value = "";
+
+        document.getElementById(
+            "nuevoRol"
+        ).value = "usuario";
+
+
+    }
+    catch (error) {
+
+        estado.innerHTML =
+            "Error al conectar con la API.";
+
+        estado.className = "error";
+
+        console.error(
+            "Error creando usuario:",
+            error
+        );
+
+    }
+
+}
 
     // ==================================================
     // SUBIR DOCUMENTO
@@ -659,130 +940,126 @@
 
     async function consultarIA() {
 
-        const pregunta =
-            document.getElementById(
-                "pregunta"
-            ).value.trim();
+    const pregunta =
+        document.getElementById("pregunta").value.trim();
+
+    const respuesta =
+        document.getElementById("respuesta");
+
+    const loader =
+        document.getElementById("loader");
+
+    const boton =
+        document.getElementById("btnPregunta");
 
 
-        const respuesta =
-            document.getElementById(
-                "respuesta"
-            );
+    if (!pregunta) {
 
-
-        const loader =
-            document.getElementById(
-                "loader"
-            );
-
-
-        const boton =
-            document.getElementById(
-                "btnPregunta"
-            );
-
-
-        if (!pregunta) {
-
-            alert("Ingrese una pregunta");
-
-            return;
-
-        }
-
-
-        loader.style.display =
-            "block";
-
-        boton.disabled = true;
-
-        respuesta.innerHTML = "";
-
-
-        try {
-
-            const response =
-                await fetch(
-                    "/consultar-ia/",
-                    {
-
-                        method: "POST",
-
-                        headers: {
-
-                            "Content-Type":
-                                "application/json",
-
-                            "Authorization":
-                                "Bearer " +
-                                obtenerToken()
-
-                        },
-
-                        body: JSON.stringify({
-
-                            pregunta:
-                                pregunta
-
-                        })
-
-                    }
-                );
-
-
-            const data =
-                await response.json();
-
-
-            if (!response.ok) {
-
-                if (
-                    response.status === 401
-                ) {
-
-                    cerrarSesion();
-
-                    alert(
-                        "La sesión expiró. Inicie sesión nuevamente."
-                    );
-
-                    return;
-
-                }
-
-
-                respuesta.innerHTML =
-                    data.detail ||
-                    "Error al consultar la IA.";
-
-                return;
-
-            }
-
-
-            respuesta.innerHTML =
-                data.respuesta ||
-                data.answer ||
-                "No se obtuvo una respuesta.";
-
-        }
-        catch (error) {
-
-            respuesta.innerHTML =
-                "Error al conectar con la API.";
-
-        }
-
-
-        loader.style.display =
-            "none";
-
-        boton.disabled = false;
+        alert("Ingrese una pregunta");
+        return;
 
     }
 
 
+    loader.style.display = "block";
+    boton.disabled = true;
+    respuesta.innerHTML = "";
+
+
+    try {
+
+        const response = await fetch(
+            "/consultar-ia/",
+            {
+                method: "POST",
+
+                headers: {
+                    "Content-Type": "application/json",
+                    "Authorization":
+                        "Bearer " + obtenerToken()
+                },
+
+                body: JSON.stringify({
+                    pregunta: pregunta
+                })
+            }
+        );
+
+
+        const data = await response.json();
+
+
+        // SESIÓN VENCIDA
+        if (response.status === 401) {
+
+            alert(
+                "La sesión expiró. Inicie sesión nuevamente."
+            );
+
+            cerrarSesion();
+
+            return;
+        }
+
+
+        // LÍMITE DE CONSULTAS
+        if (response.status === 429) {
+
+            respuesta.innerHTML =
+                "⚠️ " +
+                (
+                    data.detail ||
+                    "Has alcanzado el límite de consultas."
+                );
+
+            await actualizarUso();
+
+            return;
+        }
+
+
+        // OTROS ERRORES
+        if (!response.ok) {
+
+            respuesta.innerHTML =
+                data.detail ||
+                "Error al consultar la IA.";
+
+            return;
+        }
+
+
+        // RESPUESTA CORRECTA
+        respuesta.innerHTML =
+            data.respuesta ||
+            data.answer ||
+            "No se obtuvo una respuesta.";
+
+
+        // Actualizar contador
+        await actualizarUso();
+
+    }
+    catch (error) {
+
+        respuesta.innerHTML =
+            "Error al conectar con la API.";
+
+        console.error(
+            "Error consultando IA:",
+            error
+        );
+
+    }
+    finally {
+
+        // Se ejecuta SIEMPRE
+        loader.style.display = "none";
+        boton.disabled = false;
+
+    }
+
+}
     // ==================================================
     // COMPROBAR SESIÓN AL CARGAR LA PÁGINA
     // ==================================================

@@ -22,3 +22,9 @@ data/
 # Archivos de IDE
 .vscode/
 .idea/
+# Logs
+*.log
+
+# Sistema operativo
+.DS_Store
+Thumbs.db

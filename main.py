@@ -4,7 +4,10 @@ import shutil
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from pydantic import BaseModel
 #import xxhash
-
+import json
+import time
+import logging
+from collections import Counter
 # Librerías de LangChain y Chroma para RAG
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
@@ -17,7 +20,7 @@ from dotenv import load_dotenv
 from fastapi import Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
-import os
+
 from fastapi import Depends
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
@@ -27,9 +30,15 @@ from auth import (
     generar_password,
     crear_token,
     obtener_usuario_actual,
-    administrador_actual
+    administrador_actual,
+    verificar_rate_limit
 )
-
+from seguridad_ia import (
+    validar_pregunta,
+    detectar_prompt_injection,
+    validar_pdf,
+    validar_salida
+)
 # ==========================================
 # 1. Configuración inicial
 # ==========================================
@@ -45,13 +54,43 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 # Directorios de trabajo
 #UPLOAD_DIR = "C:\\Users\Andres\Documents\phyton\proyecto py\env\data"
 #DB_DIR = "C:\\Users\Andres\Documents\phyton\proyecto py\env\database"
-UPLOAD_DIR = "./data"
-DB_DIR = "./database"
+CHROMA_DB_DIR = os.getenv(
+    "CHROMA_DB_DIR",
+    "./database/chroma"
+)
 
+UPLOAD_DIR = os.getenv(
+    "UPLOAD_DIR",
+    "./data"
+)
+
+os.makedirs(
+    CHROMA_DB_DIR,
+    exist_ok=True
+)
+
+os.makedirs(
+    UPLOAD_DIR,
+    exist_ok=True
+)
+embeddings = OpenAIEmbeddings()
+llm = ChatOpenAI(model="gpt-3.5-turbo", temperature=0.3)
 os.makedirs(UPLOAD_DIR, exist_ok=True)
-os.makedirs(DB_DIR, exist_ok=True)
+os.makedirs(CHROMA_DB_DIR, exist_ok=True)
+templates = Jinja2Templates(directory="templates")
 #UPLOAD_DIR = os.getenv("UPLOAD_DIR", "./data")
 #DB_DIR = os.getenv("DB_DIR", "./database")
+# ==========================================
+# CONFIGURACIÓN DE LOGS
+# ==========================================
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(message)s"
+)
+
+logger = logging.getLogger("api_rag")
+
 
 # ==========================================
 # Endpoint /login
@@ -65,9 +104,10 @@ async def login(
     form_data: OAuth2PasswordRequestForm = Depends(),
     db: Session = Depends(get_db)
 ):
+    username = form_data.username.strip().lower()
 
     usuario = db.query(Usuario).filter(
-        Usuario.username == form_data.username
+        Usuario.username == username
     ).first()
 
     if not usuario:
@@ -96,13 +136,12 @@ async def login(
     }
 
 
-embeddings = OpenAIEmbeddings()
-llm = ChatOpenAI(model="gpt-3.5-turbo", temperature=0.3)
+
 
 # ==========================================
 # 2. Endpoints home
 # ==========================================
-templates = Jinja2Templates(directory="templates")
+
 
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request):
@@ -126,28 +165,47 @@ async def crear_usuario(
     db: Session = Depends(get_db)
 ):
 
-    if rol not in ["admin", "usuario"]:
+    # Normalizar nombre de usuario
+    username = username.strip().lower()
 
+    # Validar rol
+    if rol not in ["admin", "usuario"]:
         raise HTTPException(
             status_code=400,
             detail="Rol inválido"
         )
 
+    # Verificar si el usuario ya existe
     existe = db.query(Usuario).filter(
         Usuario.username == username
     ).first()
 
     if existe:
-
         raise HTTPException(
             status_code=400,
             detail="El usuario ya existe"
         )
 
+    # ==========================================
+    # DEFINIR LÍMITE SEGÚN EL ROL
+    # ==========================================
+
+    if rol == "admin":
+        limite = 100
+    else:
+        limite = 3
+
+    # ==========================================
+    # CREAR USUARIO
+    # ==========================================
+
     nuevo_usuario = Usuario(
         username=username,
         password_hash=generar_password(password),
-        rol=rol
+        rol=rol,
+        consultas_usadas=0,
+        limite_consultas=limite,
+        inicio_ventana=0
     )
 
     db.add(nuevo_usuario)
@@ -157,9 +215,9 @@ async def crear_usuario(
     return {
         "mensaje": "Usuario creado correctamente",
         "usuario": nuevo_usuario.username,
-        "rol": nuevo_usuario.rol
+        "rol": nuevo_usuario.rol,
+        "limite_consultas": nuevo_usuario.limite_consultas
     }
-
 
 
 @app.post("/cargar-documento/")
@@ -168,9 +226,8 @@ async def cargar_documento(
     usuario: Usuario = Depends(administrador_actual)
 ):
     """Sube un archivo PDF, lo procesa y lo indexa en la base de datos vectorial."""
-    if file.content_type != "application/pdf":
-        raise HTTPException(status_code=400, detail="Solo se permiten archivos PDF")
-
+    await validar_pdf(file)
+    
     file_path = os.path.join(UPLOAD_DIR, file.filename)
     
     # Guardar el archivo temporalmente
@@ -187,7 +244,7 @@ async def cargar_documento(
         splits = text_splitter.split_documents(docs)
         
         # Crear la base de datos vectorial
-        vectorstore = Chroma.from_documents(documents=splits, embedding=embeddings, persist_directory=DB_DIR)
+        vectorstore = Chroma.from_documents(documents=splits, embedding=embeddings, persist_directory=CHROMA_DB_DIR)
         vectorstore.persist()
         
         return {"mensaje": f"Documento '{file.filename}' procesado e indexado exitosamente."}
@@ -198,49 +255,221 @@ async def cargar_documento(
 
 @app.post("/consultar-ia/")
 async def consultar_ia(
-        request: PreguntaRequest, 
-        usuario: Usuario = Depends(obtener_usuario_actual)
-        ):
+    request: PreguntaRequest,
+    usuario: Usuario = Depends(verificar_rate_limit)
+):
     """Consulta la base de datos vectorial con RAG utilizando el LLM."""
-    if not os.path.exists(DB_DIR):
-        raise HTTPException(status_code=400, detail="No hay documentos indexados. Por favor, sube un documento primero.")
-    
+
+    inicio = time.time()
+
+    pregunta_segura = validar_pregunta(
+    request.pregunta
+    )
+
+    detectar_prompt_injection(
+    pregunta_segura
+    )
+
+    if not os.path.exists(CHROMA_DB_DIR):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "No hay documentos indexados. "
+                "Por favor, sube un documento primero."
+            )
+        )
+
     try:
+
         # Cargar base de datos existente
-        vectorstore = Chroma(persist_directory=DB_DIR, embedding_function=embeddings)
+        vectorstore = Chroma(
+            persist_directory=CHROMA_DB_DIR,
+            embedding_function=embeddings
+        )
+
         retriever = vectorstore.as_retriever()
-        
-        # Plantilla de Prompt (Instrucciones para el LLM)
+
+        # Plantilla de Prompt
         system_prompt = (
-            "Eres un asistente de investigación útil. Usa los siguientes fragmentos de contexto recuperados "
-            "Eres un asistente que SOLO puede responder utilizando la información presente en el CONTEXTO."
-            "Reglas:"
-            "1. No utilices conocimientos propios."
-            "2. No utilices información aprendida durante el entrenamiento."
-            "3. No deduzcas información."
-            "4. Si la respuesta no aparece explícitamente en el contexto responde únicamente: "
-            "No encontré esa información en los documentos. "
-            "5. Nunca inventes información."
-            "para responder a la pregunta. Si no sabes la respuesta, di que no la sabes, no inventes información. "
+            "Eres un asistente de investigación útil. "
+            "SOLO puedes responder utilizando la información "
+            "presente en el CONTEXTO.\n"
+            "Reglas:\n"
+            "1. No utilices conocimientos propios.\n"
+            "2. No utilices información aprendida durante el entrenamiento.\n"
+            "3. No deduzcas información.\n"
+            "4. Si la respuesta no aparece explícitamente en el contexto, "
+            "responde únicamente: "
+            "'No encontré esa información en los documentos.'\n"
+            "5. Nunca inventes información.\n"
             "Responde de manera concisa y clara.\n\n"
             "{context}"
         )
+
         prompt = ChatPromptTemplate.from_messages([
             ("system", system_prompt),
-            ("human", "{input}"),
+            ("human", "{input}")
         ])
-        
-        # Crear la cadena RAG (Retrieval-Augmented Generation)
-        question_answer_chain = create_stuff_documents_chain(llm, prompt)
-        rag_chain = create_retrieval_chain(retriever, question_answer_chain)
-        
+
+        # Crear cadena RAG
+        question_answer_chain = create_stuff_documents_chain(
+            llm,
+            prompt
+        )
+
+        rag_chain = create_retrieval_chain(
+            retriever,
+            question_answer_chain
+        )
+
+        # Ejecutar consulta
+        response = rag_chain.invoke({
+            "input": pregunta_segura
+        })
+
+        # ==========================================
+        # OBSERVABILIDAD - CONSULTA CORRECTA
+        # ==========================================
         # Ejecutar la consulta
-        response = rag_chain.invoke({"input": request.pregunta})
-        
+
+        response = rag_chain.invoke({
+            "input": pregunta_segura
+        })
+
+        # Validar la salida generada por el LLM
+
+        respuesta_segura = validar_salida(
+            response["answer"]
+        )
+
+        # Observabilidad
+        metricas["consultas_ia_total"] += 1
+
+        duracion_ms = int(
+            (time.time() - inicio) * 1000
+        )
+
+        registrar_log(
+            evento="consulta_rag",
+            usuario=usuario.username,
+            endpoint="/consultar-ia/",
+            status_code=200,
+            duracion_ms=duracion_ms,
+            detalle="Consulta procesada correctamente"
+        )
+
+        # Recién después devolvemos la respuesta
         return {
-            "pregunta": request.pregunta,
-            "respuesta": response["answer"]
+            "pregunta": pregunta_segura,
+            "respuesta": respuesta_segura
         }
-        
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error al generar la respuesta: {str(e)}")
+
+    except Exception:
+
+        # ==========================================
+        # OBSERVABILIDAD - ERROR
+        # ==========================================
+
+        metricas["errores_ia_total"] += 1
+
+        duracion_ms = int(
+            (time.time() - inicio) * 1000
+        )
+
+        registrar_log(
+            evento="error_consulta_rag",
+            usuario=usuario.username,
+            endpoint="/consultar-ia/",
+            status_code=500,
+            duracion_ms=duracion_ms,
+            detalle="Error procesando la consulta"
+        )
+
+        raise HTTPException(
+            status_code=500,
+            detail="Error al generar la respuesta."
+        )
+
+@app.get("/mi-uso/")
+async def mi_uso(
+    usuario: Usuario = Depends(obtener_usuario_actual),
+    db: Session = Depends(get_db)
+):
+
+    ahora = time.time()
+
+    # Si pasó una hora, reiniciar contador
+    if (
+        usuario.inicio_ventana == 0
+        or ahora - usuario.inicio_ventana >= 3600
+    ):
+        usuario.inicio_ventana = ahora
+        usuario.consultas_usadas = 0
+
+        db.commit()
+        db.refresh(usuario)
+
+    disponibles = (
+        usuario.limite_consultas
+        - usuario.consultas_usadas
+    )
+
+    if disponibles < 0:
+        disponibles = 0
+
+    return {
+        "usuario": usuario.username,
+        "rol": usuario.rol,
+        "consultas_usadas": usuario.consultas_usadas,
+        "limite_consultas": usuario.limite_consultas,
+        "consultas_disponibles": disponibles
+    }
+
+# ==========================================
+# MÉTRICAS
+# ==========================================
+
+metricas = Counter()
+
+
+# ==========================================
+# FUNCIÓN PARA LOGS ESTRUCTURADOS
+# ==========================================
+
+def registrar_log(
+    evento,
+    usuario=None,
+    endpoint=None,
+    status_code=None,
+    duracion_ms=None,
+    detalle=None
+):
+    log = {
+        "evento": evento,
+        "usuario": usuario,
+        "endpoint": endpoint,
+        "status_code": status_code,
+        "duracion_ms": duracion_ms,
+        "detalle": detalle
+    }
+
+    logger.info(
+        json.dumps(
+            log,
+            ensure_ascii=False
+        )
+    )
+@app.get("/metrics")
+async def obtener_metricas(
+        usuario: Usuario = Depends(
+        administrador_actual
+    )
+):
+
+    return {
+        "consultas_ia_total":
+            metricas["consultas_ia_total"],
+
+        "errores_ia_total":
+            metricas["errores_ia_total"]
+    }

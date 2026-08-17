@@ -2,6 +2,10 @@
 import os
 from datetime import datetime, timedelta, timezone
 
+import time
+from collections import defaultdict
+from fastapi import HTTPException
+
 import jwt
 from pwdlib import PasswordHash
 from fastapi import Depends, HTTPException, status
@@ -148,5 +152,101 @@ obtener_usuario_actual
         status_code=403,
         detail="No tiene permisos de administrador"
     )
+
+    return usuario
+
+# ==========================================
+# RATE LIMIT PERSISTENTE
+# ==========================================
+
+VENTANA_SEGUNDOS = 3600
+
+
+def verificar_rate_limit(
+    usuario: Usuario = Depends(
+        obtener_usuario_actual
+    ),
+    db: Session = Depends(get_db)
+):
+
+    ahora = time.time()
+
+
+    # ======================================
+    # Iniciar una nueva ventana
+    # ======================================
+
+    if (
+        usuario.inicio_ventana == 0
+        or
+        ahora - usuario.inicio_ventana
+        >= VENTANA_SEGUNDOS
+    ):
+
+        usuario.inicio_ventana = ahora
+
+        usuario.consultas_usadas = 0
+
+
+    # ======================================
+    # Comprobar límite
+    # ======================================
+
+    if (
+        usuario.consultas_usadas
+        >= usuario.limite_consultas
+    ):
+
+        tiempo_transcurrido = (
+            ahora
+            - usuario.inicio_ventana
+        )
+
+        tiempo_restante = int(
+            VENTANA_SEGUNDOS
+            - tiempo_transcurrido
+        )
+
+        if tiempo_restante < 1:
+            tiempo_restante = 1
+
+
+        raise HTTPException(
+
+            status_code=429,
+
+            detail=(
+                "Has alcanzado el límite de "
+                f"{usuario.limite_consultas} "
+                "consultas por hora."
+            ),
+
+            headers={
+                "Retry-After":
+                    str(tiempo_restante)
+            }
+        )
+
+
+    # ======================================
+    # Registrar consulta
+    # ======================================
+
+    usuario.consultas_usadas += 1
+
+
+    db.commit()
+
+    db.refresh(usuario)
+
+
+    print(
+        "RATE LIMIT -> "
+        f"usuario={usuario.username}, "
+        f"consultas="
+        f"{usuario.consultas_usadas}/"
+        f"{usuario.limite_consultas}"
+    )
+
 
     return usuario

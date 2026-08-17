@@ -4,9 +4,11 @@ on:
   push:
     branches:
       - main
+
   pull_request:
     branches:
       - main
+
 
 jobs:
 
@@ -14,28 +16,42 @@ jobs:
 
     runs-on: ubuntu-latest
 
+    env:
+      SECRET_KEY: clave-secreta-exclusiva-para-tests
+      OPENAI_API_KEY: test-api-key
+
+      USER_DB_DIR: ./database/test
+      CHROMA_DB_DIR: ./database/test_chroma
+
+
     steps:
 
-      # 1. Descargar el código del repositorio
+      # 1. Descargar código
       - name: Descargar código
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
-      # 2. Instalar Python
+
+      # 2. Configurar Python
       - name: Configurar Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.12"
+          cache: "pip"
 
-      # 3. Instalar dependencias
-      - name: Instalar dependencias
+
+      # 3. Actualizar pip
+      - name: Actualizar pip
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
 
-      # 4. Ejecutar los tests
+
+      # 4. Instalar dependencias
+      - name: Instalar dependencias
+        run: |
+          python -m pip install -r requirements.txt
+
+
+      # 5. Ejecutar todos los tests
       - name: Ejecutar tests
-        env:
-          SECRET_KEY: clave-secreta-para-tests
-          OPENAI_API_KEY: clave-de-prueba
         run: |
           python -m pytest -v
