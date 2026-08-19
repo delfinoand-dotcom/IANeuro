@@ -1,24 +1,48 @@
 # Usa una imagen oficial y ligera de Python
 FROM python:3.12-slim
 
-# Establece el directorio de trabajo dentro del contenedor
-WORKDIR /env
+# Evitar archivos .pyc y forzar salida inmediata de logs
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
 
-# Copia e instala las dependencias de tu proyecto
+# Directorio de trabajo
+WORKDIR /app
+
+# Crear usuario sin privilegios
+RUN addgroup --system appgroup \
+    && adduser --system --ingroup appgroup appuser
+
+# Copiar requirements primero
 COPY requirements.txt .
-RUN pip install --upgrade pip
-RUN pip install --no-cache-dir -r requirements.txt
 
-# Copia el resto de los archivos de tu proyecto al contenedor
+# Instalar dependencias
+RUN python -m pip install --upgrade pip \
+    && python -m pip install --no-cache-dir -r requirements.txt
+
+# Copiar aplicación
 COPY . .
-#ADD . /env
 
-# Expone el puerto en el que tu aplicación web está escuchando (por ejemplo, 5000 o 8000)
+# Crear directorios que la aplicación necesita escribir
+RUN mkdir -p /app/database/usuarios \
+    /app/database/chroma \
+    /app/data \
+    && chown -R appuser:appgroup /app
+
+# Variables de rutas
+ENV USER_DB_DIR=/app/database/usuarios
+ENV CHROMA_DB_DIR=/app/database/chroma
+ENV UPLOAD_DIR=/app/data
+
+# Ejecutar como usuario NO root
+USER appuser
+
 EXPOSE 8000
 
-#Define enviroment variable
-ENV NAME World
-
-# Comando para ejecutar tu página/aplicación (cambiar 'main.py' por tu archivo principal)
-CMD ["python", "main.py"]
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD [
+    "uvicorn",
+    "main:app",
+    "--host",
+    "0.0.0.0",
+    "--port",
+    "8000"
+]
